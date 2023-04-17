@@ -1,0 +1,8 @@
+# DealorNoDeal
+    Welcome to my version of the hit TV show Deal or No Deal!
+    In order to get started, all you have to do is hit run!
+    A skippable prompt will appear at the start in order to explain the game if you deem necessary.
+    In order to speed up the printing of the text, lower the delay parameter in the last method, and rerun the program.
+    My recommendation is to set the delay to around 40, but if you are growing impatient or are short on time
+    you are welcome to tune it down all the way to 0.
+    Enjoy!
