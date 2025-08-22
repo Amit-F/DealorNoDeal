@@ -7,10 +7,8 @@
  */
 
 plugins {
-  id("java-library") apply false
-  id("application") apply false
+  // Keep only non-core plugins here; core Java plugins live in subprojects
   id("com.diffplug.spotless") version "6.25.0"
-  id("jacoco")
 }
 
 allprojects {
@@ -26,7 +24,9 @@ allprojects {
 }
 
 subprojects {
+  // Apply JaCoCo to each subproject (this is OK in Gradle 9)
   apply(plugin = "jacoco")
+
   tasks.test {
     useJUnitPlatform()
     finalizedBy(tasks.jacocoTestReport)
