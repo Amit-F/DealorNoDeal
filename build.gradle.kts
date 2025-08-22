@@ -5,3 +5,35 @@
  * Learn more about Gradle by exploring our Samples at https://docs.gradle.org/9.0.0/samples
  * This project uses @Incubating APIs which are subject to change.
  */
+
+plugins {
+  id("java-library") apply false
+  id("application") apply false
+  id("com.diffplug.spotless") version "6.25.0"
+  id("jacoco")
+}
+
+allprojects {
+  group = "io.github.amitfink"
+  version = "2.0.0-SNAPSHOT"
+
+  repositories { mavenCentral() }
+
+  apply(plugin = "com.diffplug.spotless")
+  spotless {
+    java { googleJavaFormat().aosp().reflowLongStrings() }
+  }
+}
+
+subprojects {
+  apply(plugin = "jacoco")
+  tasks.test {
+    useJUnitPlatform()
+    finalizedBy(tasks.jacocoTestReport)
+  }
+  jacoco { toolVersion = "0.8.12" }
+  tasks.jacocoTestReport {
+    reports { xml.required.set(true); html.required.set(true) }
+  }
+}
+
