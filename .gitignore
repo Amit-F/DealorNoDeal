@@ -2,3 +2,7 @@ out/
 build/
 target/
 
+
+# macOS junk
+.DS_Store
+src/.DS_Store
