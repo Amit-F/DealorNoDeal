@@ -8,4 +8,3 @@
 
 rootProject.name = "deal-or-no-deal"
 include("core", "cli", "analytics", "legacy")
-
