@@ -1,8 +1,11 @@
-out/
-build/
-target/
+# Gradle & build output
+.gradle/
+**/build/
 
+# Legacy compile output
+out/
+target/
 
 # macOS junk
 .DS_Store
-src/.DS_Store
+
