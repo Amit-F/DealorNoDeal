@@ -6,6 +6,11 @@
  * This project uses @Incubating APIs which are subject to change.
  */
 
+// ---- Imports needed for type-safe accessors in Kotlin DSL
+import org.gradle.api.tasks.testing.Test
+import org.gradle.testing.jacoco.plugins.JacocoPluginExtension
+import org.gradle.testing.jacoco.tasks.JacocoReport
+
 plugins {
   // Keep only non-core plugins here; core Java plugins live in subprojects
   id("com.diffplug.spotless") version "6.25.0"
@@ -15,25 +20,41 @@ allprojects {
   group = "io.github.amitfink"
   version = "2.0.0-SNAPSHOT"
 
-  repositories { mavenCentral() }
+  repositories {
+    mavenCentral()
+  }
 
+  // Code style (applied to each project)
   apply(plugin = "com.diffplug.spotless")
   spotless {
-    java { googleJavaFormat().aosp().reflowLongStrings() }
+    java {
+      googleJavaFormat().aosp().reflowLongStrings()
+    }
   }
 }
 
 subprojects {
-  // Apply JaCoCo to each subproject (this is OK in Gradle 9)
+  // Apply Jacoco to every subproject (core/cli/analytics/legacy)
   apply(plugin = "jacoco")
 
-  tasks.test {
+  // Make all Test tasks use JUnit Platform and finalize with Jacoco report
+  tasks.withType<Test>().configureEach {
     useJUnitPlatform()
-    finalizedBy(tasks.jacocoTestReport)
+    // Make sure the jacoco report runs after tests in each subproject
+    finalizedBy(tasks.named("jacocoTestReport"))
   }
-  jacoco { toolVersion = "0.8.12" }
-  tasks.jacocoTestReport {
-    reports { xml.required.set(true); html.required.set(true) }
+
+  // Configure the Jacoco plugin (tool version) for each subproject
+  extensions.configure<JacocoPluginExtension> {
+    toolVersion = "0.8.12"
+  }
+
+  // Configure Jacoco report outputs for each subproject
+  tasks.withType<JacocoReport>().configureEach {
+    reports {
+      xml.required.set(true)
+      html.required.set(true)
+    }
   }
 }
 
