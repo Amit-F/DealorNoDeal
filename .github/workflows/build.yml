@@ -1,0 +1,22 @@
+name: Build (legacy layout)
+
+on:
+  push:
+    branches: [ main, master, renovation/** ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Compile all sources
+        run: |
+          mkdir -p out
+          find src -name "*.java" -print0 | xargs -0 javac -d out
+
