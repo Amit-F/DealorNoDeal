@@ -11,4 +11,4 @@ dependencies {
 
     testImplementation("org.assertj:assertj-core:3.26.3")
 }
-application { mainClass.set("io.github.amitfink.deal.cli.Main") }
+application { mainClass.set("deal.cli.Main") }
