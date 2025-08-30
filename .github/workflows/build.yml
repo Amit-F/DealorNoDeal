@@ -7,6 +7,18 @@ on:
     branches: [ main, master ]
 
 jobs:
+  legacy-javac:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Compile legacy sources
+        run: |
+          mkdir -p out
+          find legacy/src/main/java -name "*.java" -print0 | xargs -0 javac -d out
   build:
     runs-on: ubuntu-latest
     steps:
