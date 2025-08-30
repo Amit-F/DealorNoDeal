@@ -9,7 +9,7 @@ rm -rf out
 mkdir -p out
 
 echo "Compiling Java sources..."
-find src -name "*.java" -print0 | xargs -0 javac -encoding UTF-8 -d out
+find legacy/src/main/java -name "*.java" -print0 | xargs -0 javac -encoding UTF-8 -d out
 
 echo "Running $MAIN_FQCN"
 java -cp out "$MAIN_FQCN"
