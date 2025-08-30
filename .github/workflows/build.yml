@@ -1,4 +1,5 @@
-name: Build (legacy layout)
+# .github/workflows/build.yml
+name: Build (legacy + gradle)
 
 on:
   push:
@@ -17,9 +18,12 @@ jobs:
           java-version: '17'
       - name: Compile legacy sources
         run: |
+          set -euo pipefail
           mkdir -p out
-          find legacy/src/main/java -name "*.java" -print0 | xargs -0 javac -d out
-  build:
+          # compile ONLY the legacy tree (you moved src/ under legacy/)
+          find legacy/src/main/java -name "*.java" -print0 | xargs -0 javac -encoding UTF-8 -d out
+
+  gradle-build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -27,8 +31,10 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
-      - name: Compile all sources
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v3
+      - name: Build v2 modules (core/cli/analytics)
         run: |
-          mkdir -p out
-          find src -name "*.java" -print0 | xargs -0 javac -d out
+          set -euo pipefail
+          ./gradlew clean build
 
