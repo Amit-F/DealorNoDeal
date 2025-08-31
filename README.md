@@ -63,7 +63,7 @@ Flags:
 --help → see usage
 
 
-🛠️ Tech Stack
+## 🛠️ Tech Stack
 
 Java 17+
 
@@ -77,4 +77,4 @@ GitHub Actions for CI
 
 
 
-👉 Give it a spin, open a case, and see if you’d take the banker’s offer — Deal… or No Deal?
+# 👉 Give it a spin, open a case, and see if you’d take the banker’s offer — Deal… or No Deal?
