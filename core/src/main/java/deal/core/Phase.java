@@ -5,6 +5,7 @@ public enum Phase {
     PICK_CASE,
     ROUND,
     OFFER,
-    COUNTER,
+    COUNTEROFFER,
+    FINAL_REVEAL,
     RESULT
 }
