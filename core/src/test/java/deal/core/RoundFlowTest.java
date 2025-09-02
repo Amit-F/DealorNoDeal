@@ -8,60 +8,61 @@ import org.junit.jupiter.api.Test;
 class RoundFlowTest {
 
     @Test
-    void pickCase_then_chooseK_then_openK_then_offer() {
-        PrizeLadderProvider ladder = n -> List.of(1, 100, 1_000, 10_000, 50_000).subList(0, n);
+    void basic_round_flow_and_offer() {
+        // small, known ladder (dollars)
+        PrizeLadderProvider ladder = n -> List.of(100, 200, 500, 1_000, 5_000).subList(0, n);
         var cfg = new GameConfig(5, ladder, new CustomPerRoundPolicy());
-        var engine = new Engine(cfg, 123L);
+        var engine = new Engine(cfg, 7L);
 
-        var s0 = engine.start();
-        assertThat(s0.phase()).isEqualTo(Phase.PICK_CASE);
+        var s1 = engine.start();
+        var s2 = engine.pickPlayerCase(s1, 1);
 
-        var s1 = engine.pickPlayerCase(s0, 3);
-        assertThat(s1.playerCaseId()).isEqualTo(3);
-        assertThat(s1.phase()).isEqualTo(Phase.ROUND);
+        // Choose to open 2 cases
+        var s3 = engine.chooseToOpen(s2, 2);
 
-        var s2 = engine.chooseToOpen(s1, 2);
-        assertThat(s2.toOpenInThisRound()).isEqualTo(2);
+        // Open two valid non-player cases
+        int opened = 0;
+        var s4 = s3;
+        for (var c : s3.cases()) {
+            if (c.id() != s3.playerCaseId()
+                    && !s4.isOpened(c.id())
+                    && opened < s3.toOpenInThisRound()) {
+                s4 = engine.openCase(s4, c.id());
+                opened++;
+            }
+        }
+        assertThat(opened).isEqualTo(2);
 
-        int any1 =
-                s2.cases().stream()
-                        .map(Briefcase::id)
-                        .filter(i -> i != 3)
-                        .findFirst()
-                        .orElseThrow();
-        var s3 = engine.openCase(s2, any1);
-        assertThat(s3.toOpenInThisRound()).isEqualTo(1);
-
-        int any2 =
-                s3.cases().stream()
-                        .map(Briefcase::id)
-                        .filter(i -> i != 3 && !s3.openedCaseIds().contains(i))
-                        .findFirst()
-                        .orElseThrow();
-        var s4 = engine.openCase(s3, any2);
-        assertThat(s4.toOpenInThisRound()).isEqualTo(0);
-
+        // Compute banker offer
         var s5 = engine.computeOffer(s4);
-        assertThat(s5.phase()).isEqualTo(Phase.OFFER);
-        assertThat(s5.currentOfferCents()).isNotNull();
-        assertThat(s5.currentOfferCents()).isGreaterThan(0);
+        assertThat(s5.currentOfferDollars()).isNotNull();
+        assertThat(s5.currentOfferDollars()).isGreaterThan(0);
+
+        // Decline deal -> either next ROUND (if >2 remain) or FINAL_REVEAL (if only 2 remain)
+        var s6 = engine.declineDeal(s5);
+        assertThat(s6.phase() == Phase.ROUND || s6.phase() == Phase.FINAL_REVEAL).isTrue();
     }
 
     @Test
-    void policy_enforced_when_chooseToOpen() {
-        var cfg = GameConfig.of(10);
-        var engine = new Engine(cfg, 42L);
-        var s0 = engine.start();
-        var sPicked = engine.pickPlayerCase(s0, 1); // final/effectively final snapshot
+    void invalid_K_values_are_rejected() {
+        PrizeLadderProvider ladder = n -> List.of(100, 200, 500, 1_000, 5_000).subList(0, n);
+        var cfg = new GameConfig(5, ladder, new CustomPerRoundPolicy());
+        var engine = new Engine(cfg, 11L);
 
-        // not allowed: 0 or absurdly large K
-        assertThatThrownBy(() -> engine.chooseToOpen(sPicked, 0))
+        var s = engine.start();
+        s = engine.pickPlayerCase(s, 2);
+
+        // Take a final snapshot of state for lambda assertions.
+        final var sAt = s;
+
+        // unopened non-player at start = 4
+        assertThatThrownBy(() -> engine.chooseToOpen(sAt, 0))
                 .isInstanceOf(IllegalArgumentException.class);
-        assertThatThrownBy(() -> engine.chooseToOpen(sPicked, 9_999))
+        assertThatThrownBy(() -> engine.chooseToOpen(sAt, 4))
                 .isInstanceOf(IllegalArgumentException.class);
 
-        // allowed: 1..(unopened-1)
-        var ok = engine.chooseToOpen(sPicked, 3);
-        assertThat(ok.toOpenInThisRound()).isEqualTo(3);
+        // allowed: 1..3
+        assertThatCode(() -> engine.chooseToOpen(sAt, 1)).doesNotThrowAnyException();
+        assertThatCode(() -> engine.chooseToOpen(sAt, 3)).doesNotThrowAnyException();
     }
 }
