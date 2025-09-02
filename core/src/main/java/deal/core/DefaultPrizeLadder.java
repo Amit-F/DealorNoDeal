@@ -8,16 +8,14 @@ import java.util.List;
  */
 public final class DefaultPrizeLadder implements PrizeLadderProvider {
 
-    // TODO(you): paste your exact legacy 10-case ladder here (dollars, ascending).
     private static final List<Integer> LEGACY_10 =
-            List.of(1, 10, 50, 100, 500, 1_000, 5_000, 10_000, 25_000, 50_000);
+            List.of(1, 5, 10, 25, 50, 75, 100, 200, 300, 400);
 
-    // TODO(you): paste your exact legacy 25-case ladder here (dollars, ascending).
     private static final List<Integer> LEGACY_25 =
             List.of(
-                    1, 10, 25, 50, 75, 100, 200, 300, 400, 500, 750, 1_000, 2_500, 5_000, 7_500,
-                    10_000, 15_000, 25_000, 50_000, 75_000, 100_000, 200_000, 300_000, 400_000,
-                    500_000);
+                    1, 5, 10, 25, 50, 75, 100, 200, 300, 400, 500, 750, 1_000, 5_000, 10_000,
+                    25_000, 50_000, 75_000, 100_000, 200_000, 300_000, 400_000, 500_000, 750_000,
+                    1_000_000);
 
     @Override
     public List<Integer> amountsFor(int caseCount) {
