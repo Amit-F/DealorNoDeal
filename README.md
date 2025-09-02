@@ -46,22 +46,29 @@ chmod +x ./run-legacy.sh
 
 ### Renovated (v2, Gradle)
 
-Run with Gradle — no IDE setup required:
+The renovated version is Gradle-based, but you don’t need to know Gradle to run it — we’ve added helper scripts:
 
-# Example: play with 10 cases
-./gradlew :cli:run --args="--cases=10 --seed=42"
+**On Mac/Linux:**
+```bash
+./run-v2.sh --cases=25 --seed=123
+```
 
-# Or: play with 25 cases
-./gradlew :cli:run --args="--cases=25 --seed=123"
+**On Windows (PowerShell or CMD):**
+```bat
+run-v2.bat --cases=10 --seed=42
+```
 
-Flags:
+# Both scripts will:
+
+Build/install the CLI app (fast if already built).
+
+Launch it interactively with the arguments you provide.
 
 --cases=N → number of briefcases (10, 25 supported; more coming)
 
 --seed=S → RNG seed for reproducible playthroughs
 
---help → see usage
-
+--help → show usage
 
 ## 🛠️ Tech Stack
 
