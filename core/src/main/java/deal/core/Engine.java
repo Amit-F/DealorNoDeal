@@ -16,7 +16,7 @@ public final class Engine {
     }
 
     public GameState start() {
-        List<Integer> shuffled = new ArrayList<>(cfg.amountsCents());
+        List<Integer> shuffled = new ArrayList<>(cfg.amountsDollars());
         Collections.shuffle(shuffled, rng);
         List<Briefcase> cases = new ArrayList<>(shuffled.size());
         for (int i = 0; i < shuffled.size(); i++) {
@@ -45,16 +45,14 @@ public final class Engine {
     /** Open a non-player unopened case; decreases remaining K. */
     public GameState openCase(GameState s, int caseId) {
         requirePhase(s, Phase.ROUND);
-        if (s.toOpenInThisRound() <= 0) {
+        if (s.toOpenInThisRound() <= 0)
             throw new IllegalStateException("Nothing left to open this round");
-        }
         requireValidCaseId(s, caseId);
         if (s.playerCaseId() != null && caseId == s.playerCaseId()) {
             throw new IllegalArgumentException("Cannot open the player's own case");
         }
-        if (s.isOpened(caseId)) {
+        if (s.isOpened(caseId))
             throw new IllegalArgumentException("Case already opened: " + caseId);
-        }
 
         var s1 = s.withOpened(caseId);
         return new GameState(
@@ -63,13 +61,13 @@ public final class Engine {
                 s1.cases(),
                 s1.playerCaseId(),
                 s1.openedCaseIds(),
-                s1.currentOfferCents(),
-                s1.counterOfferCents(),
-                s1.resultCents(),
+                s1.currentOfferDollars(),
+                s1.counterOfferDollars(),
+                s1.resultDollars(),
                 s1.toOpenInThisRound() - 1);
     }
 
-    /** Compute banker offer based on remaining EV and a simple risk factor. */
+    /** Compute banker offer based on remaining EV and a simple risk factor (deterministic). */
     public GameState computeOffer(GameState s) {
         if (s.toOpenInThisRound() > 0) {
             throw new IllegalStateException(
@@ -85,72 +83,59 @@ public final class Engine {
     /** Player accepts banker offer. */
     public GameState acceptDeal(GameState s) {
         requirePhase(s, Phase.OFFER);
-        // End the game with the offer amount
-        return s.withResult(nonNull(s.currentOfferCents(), "offer not set"));
+        return s.withResult(nonNull(s.currentOfferDollars(), "offer not set"));
     }
 
     /** Player declines banker offer; go to next round or final reveal if two cases remain. */
     public GameState declineDeal(GameState s) {
         requirePhase(s, Phase.OFFER);
-        // how many unopened after decline?
         int remaining = s.cases().size() - s.openedCaseIds().size();
-        if (remaining <= 2) {
-            return s.toFinalReveal();
-        }
-        return s.nextRound(); // choose K again next loop
+        if (remaining <= 2) return s.toFinalReveal();
+        return s.nextRound();
     }
 
-    /**
-     * Player proposes a counteroffer while in OFFER; enters COUNTEROFFER phase with the proposal
-     * recorded.
-     */
-    public GameState proposeCounter(GameState s, int playerCounterCents) {
+    /** Player proposes a counteroffer during OFFER; enters COUNTEROFFER phase. */
+    public GameState proposeCounter(GameState s, int playerCounterDollars) {
         requirePhase(s, Phase.OFFER);
-        if (playerCounterCents <= 0) throw new IllegalArgumentException("Counter must be positive");
+        if (playerCounterDollars <= 0)
+            throw new IllegalArgumentException("Counter must be positive");
         int maxRemaining = remainingAmounts(s).stream().mapToInt(x -> x).max().orElse(0);
-        if (playerCounterCents > maxRemaining) {
+        if (playerCounterDollars > maxRemaining) {
             throw new IllegalArgumentException("Counter exceeds maximum possible prize");
         }
-        return s.withCounterOffer(playerCounterCents);
+        return s.withCounterOffer(playerCounterDollars);
     }
 
     /**
      * Banker decides whether to accept the counter. Deterministic rule: accept if counter <= EV *
-     * acceptanceFactor, where acceptanceFactor = min(1.10, 0.95 + 0.03 * roundIndex). If accepted
-     * -> RESULT with counter amount; else -> next round or FINAL_REVEAL if <=2 remain.
+     * acceptanceFactor, where acceptanceFactor = min(1.10, 0.95 + 0.03 * roundIndex).
      */
     public GameState resolveCounter(GameState s) {
         requirePhase(s, Phase.COUNTEROFFER);
-        int counter = nonNull(s.counterOfferCents(), "counter not set");
+        int counter = nonNull(s.counterOfferDollars(), "counter not set");
         double ev = remainingAmounts(s).stream().mapToDouble(a -> a).average().orElse(0.0);
         double acceptanceFactor = Math.min(1.10, 0.95 + 0.03 * s.roundIndex());
         boolean accepted = counter <= ev * acceptanceFactor;
         if (accepted) {
             return s.withResult(counter);
         } else {
-            // reject: proceed similarly to declineDeal()
             int remaining = s.cases().size() - s.openedCaseIds().size();
             if (remaining <= 2) return s.toFinalReveal();
             return s.nextRound();
         }
     }
 
-    /**
-     * Final reveal: if two cases remain, player may keep or swap their case, then we reveal the
-     * amount and end.
-     */
+    /** Final reveal: if two cases remain, keep or swap; reveal winnings and end. */
     public GameState revealFinal(GameState s, boolean swap) {
         requirePhase(s, Phase.FINAL_REVEAL);
         int playerId = nonNull(s.playerCaseId(), "playerCase not chosen");
         var remainingIds = s.remainingUnopenedIds();
-        if (!remainingIds.contains(playerId)) {
-            throw new IllegalStateException("Player case was opened by mistake");
-        }
-        if (remainingIds.size() != 2) {
+        if (!remainingIds.contains(playerId))
+            throw new IllegalStateException("Player case was opened");
+        if (remainingIds.size() != 2)
             throw new IllegalStateException("Final reveal requires exactly 2 unopened cases");
-        }
-        int otherId = remainingIds.get(0) == playerId ? remainingIds.get(1) : remainingIds.get(0);
 
+        int otherId = remainingIds.get(0) == playerId ? remainingIds.get(1) : remainingIds.get(0);
         int chosenId = swap ? otherId : playerId;
         int win = amountOf(s, chosenId);
         return s.withResult(win);
@@ -159,15 +144,13 @@ public final class Engine {
     // ---- helpers ----
 
     private static void requirePhase(GameState s, Phase expected) {
-        if (s.phase() != expected) {
+        if (s.phase() != expected)
             throw new IllegalStateException("Expected phase " + expected + " but was " + s.phase());
-        }
     }
 
     private static void requireValidCaseId(GameState s, int caseId) {
-        if (caseId < 1 || caseId > s.cases().size()) {
+        if (caseId < 1 || caseId > s.cases().size())
             throw new IllegalArgumentException("Invalid case id: " + caseId);
-        }
     }
 
     private static int countUnopenedNonPlayer(GameState s) {
@@ -182,12 +165,12 @@ public final class Engine {
     private static List<Integer> remainingAmounts(GameState s) {
         var opened = new HashSet<>(s.openedCaseIds());
         List<Integer> out = new ArrayList<>();
-        for (var c : s.cases()) if (!opened.contains(c.id())) out.add(c.amountCents());
+        for (var c : s.cases()) if (!opened.contains(c.id())) out.add(c.amountDollars());
         return out;
     }
 
     private static int amountOf(GameState s, int caseId) {
-        for (var c : s.cases()) if (c.id() == caseId) return c.amountCents();
+        for (var c : s.cases()) if (c.id() == caseId) return c.amountDollars();
         throw new IllegalArgumentException("No such case id " + caseId);
     }
 

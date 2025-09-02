@@ -12,9 +12,9 @@ public final class GameState {
     private final List<Briefcase> cases;
     private final Integer playerCaseId; // null until chosen
     private final List<Integer> openedCaseIds;
-    private final Integer currentOfferCents; // null until set
-    private final Integer counterOfferCents; // null until set (Stage 5)
-    private final Integer resultCents; // null until RESULT
+    private final Integer currentOfferDollars; // null until set
+    private final Integer counterOfferDollars; // null until set
+    private final Integer resultDollars; // null until RESULT
     private final int toOpenInThisRound; // remaining K to open this round
 
     public GameState(
@@ -23,18 +23,18 @@ public final class GameState {
             List<Briefcase> cases,
             Integer playerCaseId,
             List<Integer> openedCaseIds,
-            Integer currentOfferCents,
-            Integer counterOfferCents,
-            Integer resultCents,
+            Integer currentOfferDollars,
+            Integer counterOfferDollars,
+            Integer resultDollars,
             int toOpenInThisRound) {
         this.phase = Objects.requireNonNull(phase);
         this.roundIndex = roundIndex;
         this.cases = List.copyOf(cases);
         this.playerCaseId = playerCaseId;
         this.openedCaseIds = List.copyOf(openedCaseIds);
-        this.currentOfferCents = currentOfferCents;
-        this.counterOfferCents = counterOfferCents;
-        this.resultCents = resultCents;
+        this.currentOfferDollars = currentOfferDollars;
+        this.counterOfferDollars = counterOfferDollars;
+        this.resultDollars = resultDollars;
         this.toOpenInThisRound = toOpenInThisRound;
     }
 
@@ -62,29 +62,29 @@ public final class GameState {
         return openedCaseIds;
     }
 
-    public Integer currentOfferCents() {
-        return currentOfferCents;
+    public Integer currentOfferDollars() {
+        return currentOfferDollars;
     }
 
-    public Integer counterOfferCents() {
-        return counterOfferCents;
+    public Integer counterOfferDollars() {
+        return counterOfferDollars;
     }
 
-    public Integer resultCents() {
-        return resultCents;
+    public Integer resultDollars() {
+        return resultDollars;
     }
 
     public int toOpenInThisRound() {
         return toOpenInThisRound;
     }
 
-    /** Convenience: unopened cases (including player's own if not opened). */
+    /** Unopened briefcases (including player's own). */
     public List<Briefcase> unopened() {
         var opened = new HashSet<>(openedCaseIds);
         return cases.stream().filter(c -> !opened.contains(c.id())).collect(Collectors.toList());
     }
 
-    /** Convenience: just ids of unopened cases. */
+    /** IDs of unopened briefcases. */
     public List<Integer> remainingUnopenedIds() {
         var opened = new HashSet<>(openedCaseIds);
         List<Integer> out = new ArrayList<>();
@@ -96,20 +96,28 @@ public final class GameState {
         return openedCaseIds.contains(id);
     }
 
-    public GameState withOffer(int cents) {
+    public GameState withOffer(int dollars) {
         return new GameState(
-                Phase.OFFER, roundIndex, cases, playerCaseId, openedCaseIds, cents, null, null, 0);
+                Phase.OFFER,
+                roundIndex,
+                cases,
+                playerCaseId,
+                openedCaseIds,
+                dollars,
+                null,
+                null,
+                0);
     }
 
-    public GameState withCounterOffer(int cents) {
+    public GameState withCounterOffer(int dollars) {
         return new GameState(
                 Phase.COUNTEROFFER,
                 roundIndex,
                 cases,
                 playerCaseId,
                 openedCaseIds,
-                currentOfferCents,
-                cents,
+                currentOfferDollars,
+                dollars,
                 null,
                 0);
     }
@@ -137,16 +145,16 @@ public final class GameState {
         newOpened.add(caseId);
         var newCases = new ArrayList<Briefcase>(cases.size());
         for (var c : cases)
-            newCases.add(c.id() == caseId ? new Briefcase(c.id(), c.amountCents(), true) : c);
+            newCases.add(c.id() == caseId ? new Briefcase(c.id(), c.amountDollars(), true) : c);
         return new GameState(
                 phase,
                 roundIndex,
                 List.copyOf(newCases),
                 playerCaseId,
                 List.copyOf(newOpened),
-                currentOfferCents,
-                counterOfferCents,
-                resultCents,
+                currentOfferDollars,
+                counterOfferDollars,
+                resultDollars,
                 toOpenInThisRound);
     }
 
@@ -168,16 +176,16 @@ public final class GameState {
                 0);
     }
 
-    public GameState withResult(int cents) {
+    public GameState withResult(int dollars) {
         return new GameState(
                 Phase.RESULT,
                 roundIndex,
                 cases,
                 playerCaseId,
                 openedCaseIds,
-                currentOfferCents,
-                counterOfferCents,
-                cents,
+                currentOfferDollars,
+                counterOfferDollars,
+                dollars,
                 0);
     }
 }
