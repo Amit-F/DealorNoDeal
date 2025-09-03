@@ -18,7 +18,7 @@ The project demonstrates:
 ---
 
 ## 🕹 Features
-- 🎒 **Legacy v1**: the original simulation (choose custom case counts, custom cases per round).  
+- 🎒 **Legacy v1**: my original simulation (choose custom case counts and custom cases per round).  
 - 🚀 **Renovated v2**:
   - Modular architecture (`core`, `cli`, `analytics`)  
   - Flexible **round rules** and **banker offers**  
@@ -26,7 +26,7 @@ The project demonstrates:
   - Tested end-to-end (round flow, rules, offers)  
   - CI pipelines verifying both v1 + v2 builds  
 
-Coming soon (Stage 5):
+Coming soon:
 - 💼 Counteroffers as a first-class mechanic  
 - 🎉 Final reveal logic (what’s in your case?)  
 - 📊 Banker “advisor” stats: expected value, risk factor, and strategy hints  
