@@ -6,7 +6,7 @@
 ---
 
 ## 🌟 Overview
-This is a simulation of the game show **Deal or No Deal**, with my own twists:  
+This is a simulation of the game show [*Deal or No Deal*](https://en.wikipedia.org/wiki/Deal_or_No_Deal), with my own twists:  
 - **Legacy version** (the original I wrote years ago, still runnable)  
 - **Renovated v2** (refactored, tested, Gradle-based, CI-ready)
 
