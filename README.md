@@ -10,11 +10,6 @@ This is a simulation of the game show [*Deal or No Deal*](https://en.wikipedia.o
 - **Legacy version** (the original I wrote years ago, still runnable)  
 - **Renovated v2** (refactored, tested, Gradle-based, CI-ready)
 
-The project demonstrates:
-- **Software craftsmanship**: refactored codebase, modular design (`core`, `cli`, `analytics`, `legacy`)  
-- **Engineering best practices**: Gradle multi-module build, Spotless formatting, JUnit 5 tests, GitHub Actions CI  
-- **Gameplay creativity**: counteroffers, custom number of cases, and player-driven rounds  
-
 ---
 
 ## 🕹 Features
