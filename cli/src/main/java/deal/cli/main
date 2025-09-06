@@ -1,0 +1,266 @@
+package deal.cli;
+
+import deal.core.Briefcase;
+import deal.core.CustomPerRoundPolicy;
+import deal.core.DefaultPrizeLadder;
+import deal.core.Engine;
+import deal.core.GameConfig;
+import deal.core.GameState;
+import deal.core.Phase;
+import java.text.NumberFormat;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.List;
+import java.util.Locale;
+import java.util.Objects;
+import java.util.Scanner;
+
+/**
+ * Renovated v2 CLI with legacy parity:
+ * - Player chooses how many cases to open each round (no hard-coded schedule).
+ * - Each opened case reveals its dollar amount immediately.
+ * - After each open, the board (remaining amounts + unopened case IDs) is printed.
+ * - After the chosen K opens, the banker makes an offer; we display EV and Offer/EV.
+ * - Counteroffers are supported exactly as in core (deterministic accept/reject).
+ * - Final reveal supports swap/keep and prints the result.
+ */
+public final class Main {
+
+    private static final NumberFormat USD = NumberFormat.getCurrencyInstance(Locale.US);
+
+    public static void main(String[] argv) {
+        Args args = Args.parse(argv);
+        CliOptions opt = CliOptions.from(args);
+        if (opt.help) {
+            System.out.println(CliOptions.usage());
+            return;
+        }
+
+        GameConfig cfg = new GameConfig(opt.caseCount, new DefaultPrizeLadder(), new CustomPerRoundPolicy());
+        Engine engine = new Engine(cfg, opt.seed);
+        GameState s = engine.start();
+
+        try (Scanner in = new Scanner(System.in)) {
+            System.out.println("Deal or No Deal — v2 (legacy-parity)");
+            System.out.println("Case count: " + cfg.caseCount() + " | Seed: " + opt.seed);
+            printBoard(s);
+
+            // Pick player's case
+            Integer playerId = askInt(in, "Pick your case id (1.." + cfg.caseCount() + "): ");
+            if (playerId == null) return;
+            while (true) {
+                try {
+                    s = engine.pickPlayerCase(s, playerId);
+                    break;
+                } catch (Exception e) {
+                    System.out.println("Error: " + e.getMessage());
+                    playerId = askInt(in, "Pick your case id (1.." + cfg.caseCount() + "): ");
+                    if (playerId == null) return;
+                }
+            }
+            System.out.println("You picked case #" + playerId + ".");
+            printBoard(s);
+
+            int round = 1;
+            outer:
+            while (true) {
+                if (s.phase() == Phase.FINAL_REVEAL) {
+                    // Terminal: swap/keep
+                    System.out.println();
+                    System.out.println("=== Final Reveal ===");
+                    boolean swap = askYesNo(in, "Swap your case with the last unopened one? [y/n]: ");
+                    s = engine.revealFinal(s, swap);
+                    System.out.println("Result: " + fmt(Objects.requireNonNull(s.resultDollars())));
+                    break;
+                }
+                if (s.phase() == Phase.RESULT) {
+                    System.out.println("Result: " + fmt(Objects.requireNonNull(s.resultDollars())));
+                    break;
+                }
+                if (remainingNonPlayerUnopened(s) <= 1) {
+                    s = s.toFinalReveal(); // ensure we enter final reveal phase
+                    continue;
+                }
+
+                System.out.println();
+                System.out.println("=== Round " + round + " ===");
+                printBoard(s);
+
+                // Ask how many to open this round (validated by policy inside engine.chooseToOpen)
+                int maxNonPlayer = remainingNonPlayerUnopened(s);
+                Integer k = askInt(in, "How many cases do you want to open this round? (1.." + (maxNonPlayer - 1) + "): ");
+                if (k == null) return;
+                while (true) {
+                    try {
+                        s = engine.chooseToOpen(s, k);
+                        break;
+                    } catch (Exception e) {
+                        System.out.println("Error: " + e.getMessage());
+                        k = askInt(in, "How many cases do you want to open this round? (>=1, leave at least one unopened besides your case): ");
+                        if (k == null) return;
+                    }
+                }
+
+                int opens = s.toOpenInThisRound();
+                for (int i = 1; i <= opens; i++) {
+                    Integer id = askInt(in, "Open which case id? (" + i + "/" + opens + "): ");
+                    if (id == null) return;
+                    // determine prize before we mutate state
+                    Integer prize = amountOf(s, id);
+                    try {
+                        s = engine.openCase(s, id);
+                    } catch (Exception e) {
+                        System.out.println("Error: " + e.getMessage());
+                        i--; // retry this position
+                        continue;
+                    }
+                    if (prize != null) {
+                        System.out.println("Opened case #" + id + " \u2192 " + fmt(prize));
+                    } else {
+                        System.out.println("Opened case #" + id + ".");
+                    }
+                    printBoard(s);
+                }
+
+                // Banker offer stage
+                s = engine.computeOffer(s);
+                int offer = Objects.requireNonNull(s.currentOfferDollars(), "Offer not computed");
+                double ev = computeEV(s);
+                double ratio = (ev == 0.0) ? Double.NaN : offer / ev;
+
+                System.out.printf("Banker offers %s | EV %s | %.2fx%n", fmt(offer), fmt((int)Math.round(ev)), ratio);
+
+                // Decision loop
+                while (true) {
+                    String line = askLine(in, "Decision? [deal / nodeal / counter <amount>]: ");
+                    if (line == null) return;
+                    String lower = line.trim().toLowerCase(Locale.ROOT);
+                    if (lower.equals("deal")) {
+                        s = engine.acceptDeal(s);
+                        System.out.println("DEAL! You took " + fmt(Objects.requireNonNull(s.resultDollars())));
+                        break outer;
+                    } else if (lower.equals("nodeal")) {
+                        s = engine.declineDeal(s);
+                        break; // continue rounds or final reveal
+                    } else if (lower.startsWith("counter")) {
+                        String[] parts = line.trim().split("\\s+");
+                        if (parts.length < 2) {
+                            System.out.println("Usage: counter <amount>");
+                            continue;
+                        }
+                        try {
+                            int counter = Integer.parseInt(parts[1].replaceAll("[_,]", ""));
+                            s = engine.proposeCounter(s, counter);
+                            s = engine.resolveCounter(s);
+                            if (s.phase() == Phase.RESULT) {
+                                System.out.println("Counter accepted! You win " + fmt(Objects.requireNonNull(s.resultDollars())));
+                                break outer;
+                            } else if (s.phase() == Phase.FINAL_REVEAL) {
+                                System.out.println("Counter rejected. Proceeding to final reveal...");
+                                break;
+                            } else {
+                                System.out.println("Counter rejected. Next round...");
+                                break;
+                            }
+                        } catch (Exception e) {
+                            System.out.println("Error: " + e.getMessage());
+                        }
+                    } else {
+                        System.out.println("Please type 'deal', 'nodeal', or 'counter <amount>'.");
+                    }
+                }
+
+                round++;
+            }
+        }
+    }
+
+    // ----- Helpers -----
+
+    private static Integer amountOf(GameState s, int caseId) {
+        for (Briefcase c : s.cases()) if (c.id() == caseId) return c.amountDollars();
+        return null;
+    }
+
+    private static void printBoard(GameState s) {
+        List<Integer> remaining = remainingAmounts(s);
+        List<Integer> unopened = unopenedIds(s);
+        System.out.println("Remaining amounts: " + fmtList(remaining));
+        System.out.println("Unopened case IDs: " + unopened);
+    }
+
+    private static List<Integer> remainingAmounts(GameState s) {
+        List<Integer> out = new ArrayList<>();
+        for (Briefcase c : s.cases()) if (!s.isOpened(c.id())) out.add(c.amountDollars());
+        out.sort(Comparator.naturalOrder());
+        return out;
+    }
+
+    private static List<Integer> unopenedIds(GameState s) {
+        List<Integer> out = new ArrayList<>();
+        for (Briefcase c : s.cases()) if (!s.isOpened(c.id())) out.add(c.id());
+        out.sort(Comparator.naturalOrder());
+        return out;
+    }
+
+    private static int remainingNonPlayerUnopened(GameState s) {
+        int count = 0;
+        Integer pid = s.playerCaseId();
+        for (Briefcase c : s.cases()) {
+            if (!s.isOpened(c.id()) && (pid == null || c.id() != pid)) count++;
+        }
+        return count;
+    }
+
+    private static double computeEV(GameState s) {
+        List<Integer> rem = remainingAmounts(s);
+        if (rem.isEmpty()) return 0.0;
+        long sum = 0;
+        for (int v : rem) sum += v;
+        return sum / (double) rem.size();
+    }
+
+    private static Integer askInt(Scanner in, String prompt) {
+        System.out.print(prompt);
+        if (!in.hasNextLine()) return null;
+        String line = in.nextLine().trim();
+        try {
+            return Integer.parseInt(line.replaceAll("[_,]", ""));
+        } catch (NumberFormatException e) {
+            System.out.println("Please enter a valid integer.");
+            return askInt(in, prompt);
+        }
+    }
+
+    private static String askLine(Scanner in, String prompt) {
+        System.out.print(prompt);
+        if (!in.hasNextLine()) return null;
+        return in.nextLine();
+    }
+
+    private static boolean askYesNo(Scanner in, String prompt) {
+        for (;;) {
+            System.out.print(prompt);
+            if (!in.hasNextLine()) return false;
+            String s = in.nextLine().trim().toLowerCase(Locale.ROOT);
+            if (s.equals("y") || s.equals("yes")) return true;
+            if (s.equals("n") || s.equals("no")) return false;
+            System.out.println("Please answer y/n.");
+        }
+    }
+
+    private static String fmtList(List<Integer> xs) {
+        StringBuilder sb = new StringBuilder("[");
+        for (int i = 0; i < xs.size(); i++) {
+            if (i > 0) sb.append(", ");
+            sb.append(fmt(xs.get(i)));
+        }
+        sb.append("]");
+        return sb.toString();
+    }
+
+    private static String fmt(int dollars) {
+        return USD.format(dollars);
+    }
+}
+
