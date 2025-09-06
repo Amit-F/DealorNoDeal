@@ -1,7 +1,7 @@
 package deal.cli;
 
 final class CliOptions {
-    final int caseCount;
+    final int caseCount; // >= 2 for fixed, or -1 means "custom" (prompt)
     final long seed;
     final boolean help;
     final boolean showEv; // used by Main.java
@@ -20,15 +20,20 @@ final class CliOptions {
         // help
         boolean help = args.has("help") || args.has("h");
 
-        // --cases (default 25)
+        // --cases (default 25). If "custom", we return -1 and Main will prompt.
         String casesStr = args.getOne("cases", "25");
         int caseCount;
-        try {
-            caseCount = Integer.parseInt(casesStr);
-            if (caseCount < 2)
-                throw new IllegalArgumentException("cases must be >= 2 (got " + caseCount + ")");
-        } catch (NumberFormatException e) {
-            throw new IllegalArgumentException("Invalid integer for --cases: " + casesStr);
+        if ("custom".equalsIgnoreCase(casesStr)) {
+            caseCount = -1; // sentinel for interactive prompt
+        } else {
+            try {
+                caseCount = Integer.parseInt(casesStr);
+                if (caseCount < 2)
+                    throw new IllegalArgumentException(
+                            "cases must be >= 2 (got " + caseCount + ")");
+            } catch (NumberFormatException e) {
+                throw new IllegalArgumentException("Invalid integer for --cases: " + casesStr);
+            }
         }
 
         // --seed (default 42)
@@ -60,7 +65,8 @@ final class CliOptions {
                 System.lineSeparator(),
                 "Deal or No Deal (v2 CLI)",
                 "Usage:",
-                "  --cases=<N>            Number of briefcases (e.g., 10 or 25).",
+                "  --cases=<N|custom>     Number of briefcases (e.g., 10 or 25), or 'custom' for a"
+                        + " prompt.",
                 "  --seed=<long>          RNG seed for deterministic shuffles (default: 42).",
                 "  --show-ev=<true|false> Show/hide EV & offer/EV advisor line (default: true).",
                 "  --transcript=<file>    Export a transcript to .json or .csv.",

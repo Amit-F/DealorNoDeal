@@ -3,8 +3,9 @@ package deal.core;
 import java.util.List;
 
 /**
- * Prize ladders in **dollars** (integers). TODO: Replace LEGACY_10 and LEGACY_25 with your exact
- * legacy amounts (ascending).
+ * Prize ladders in dollars (integers). Supports classic 10 & 25 case games and custom case counts
+ * from 2..25 by taking the lowest N amounts from the 25-case ladder. Example: N=8 -> highest $200;
+ * N=11 -> highest $500.
  */
 public final class DefaultPrizeLadder implements PrizeLadderProvider {
 
@@ -19,10 +20,13 @@ public final class DefaultPrizeLadder implements PrizeLadderProvider {
 
     @Override
     public List<Integer> amountsFor(int caseCount) {
-        return switch (caseCount) {
-            case 10 -> LEGACY_10;
-            case 25 -> LEGACY_25;
-            default -> throw new IllegalArgumentException("Unsupported case count: " + caseCount);
-        };
+        if (caseCount < 2 || caseCount > 25) {
+            throw new IllegalArgumentException(
+                    "Unsupported case count: " + caseCount + " (allowed 2..25)");
+        }
+        if (caseCount == 25) return LEGACY_25;
+        if (caseCount == 10) return LEGACY_10; // explicit parity for the classic 10-case game
+        // For any other N in 2..24, use the first N amounts from the 25-case ladder.
+        return List.copyOf(LEGACY_25.subList(0, caseCount));
     }
 }
