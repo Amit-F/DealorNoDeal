@@ -40,6 +40,6 @@ jobs:
       - name: Format (Spotless) and build
         run: |
           set -euo pipefail
-          ./gradlew --no-daemon --stacktrace --warning-mode all \
-            spotlessApply clean build
+            ./gradlew --no-daemon --stacktrace --warning-mode all clean
+            ./gradlew --no-daemon --stacktrace --warning-mode all spotlessApply build
 

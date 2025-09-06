@@ -18,10 +18,11 @@ import java.util.List;
 import java.util.Locale;
 
 /**
- * v2 CLI with legacy parity + Stage 5c: - Player chooses how many cases to open each round (no
- * hard-coded schedule). - Immediate reveal after each open; board reprinted after each open. -
+ * v2 CLI with legacy parity + Stage 5c polish: - Player chooses how many cases to open each round
+ * (no hard-coded schedule). - Immediate reveal after each open; board reprinted after each open. -
  * Banker offer after the chosen opens; EV/advisor line can be hidden with --show-ev=false. -
- * Optional transcript export via --transcript=out.json | out.csv.
+ * Optional transcript export via --transcript=out.json | out.csv. - New: --cases=custom prompts for
+ * any integer >= 4 before starting.
  */
 public final class Main {
 
@@ -44,10 +45,19 @@ public final class Main {
             return;
         }
 
+        // Resolve case count (support --cases=custom via prompt)
+        int caseCount = opt.caseCount;
+        BufferedReader in = new BufferedReader(new InputStreamReader(System.in));
+        if (caseCount < 0) {
+            caseCount = askIntMin(in, "Enter total number of cases (>= 4): ", 4);
+            if (caseCount <= 0) exitNoInput(); // defensive
+        }
+
+        // Build engine with resolved case count
         Engine engine;
         GameState s;
         try {
-            var cfg = GameConfig.of(opt.caseCount);
+            var cfg = GameConfig.of(caseCount);
             engine = new Engine(cfg, opt.seed);
             s = engine.start();
         } catch (IllegalArgumentException ex) {
@@ -56,6 +66,7 @@ public final class Main {
             return;
         }
 
+        // Transcript (created after we know the final, resolved case count)
         TranscriptWriter tx = null;
         int step = 0;
         try {
@@ -63,7 +74,7 @@ public final class Main {
                 tx = TranscriptWriter.fromPath(Paths.get(opt.transcriptPath));
                 String header =
                         "{\"cases\":"
-                                + opt.caseCount
+                                + caseCount
                                 + ",\"seed\":"
                                 + opt.seed
                                 + ",\"timestamp\":\""
@@ -72,7 +83,6 @@ public final class Main {
                 tx.writeHeader(header);
             }
 
-            var in = new BufferedReader(new InputStreamReader(System.in));
             System.out.println("Welcome to Deal or No Deal (v2)");
             System.out.println("Cases: " + s.cases().size());
             printRemainingBrief(s);
@@ -183,7 +193,7 @@ public final class Main {
                         System.out.println("Error: " + e.getMessage());
                         continue; // retry this pick
                     }
-                    System.out.println("Opened case #" + id + " → " + fmt(prize));
+                    System.out.println("Opened case #" + id + " \u2192 " + fmt(prize));
                     printRemainingAmounts(s);
 
                     if (tx != null) {
@@ -214,9 +224,9 @@ public final class Main {
                 System.out.println("Banker offers: " + fmt(offer));
                 if (opt.showEv) {
                     System.out.println(
-                            "Advisor: EV ≈ "
+                            "Advisor: EV \u2248 "
                                     + fmt((int) Math.round(ev))
-                                    + " | Offer/EV ≈ "
+                                    + " | Offer/EV \u2248 "
                                     + String.format(Locale.US, "%.2f", ratio));
                 }
                 System.out.println(
@@ -374,6 +384,15 @@ public final class Main {
             } catch (NumberFormatException e) {
                 System.out.println("Please enter a valid integer.");
             }
+        }
+    }
+
+    private static int askIntMin(BufferedReader in, String prompt, int min) {
+        while (true) {
+            Integer v = askInt(in, prompt);
+            if (v == null) return -1;
+            if (v >= min) return v;
+            System.out.println("Please enter an integer >= " + min + ".");
         }
     }
 
