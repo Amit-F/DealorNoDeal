@@ -21,8 +21,8 @@ import java.util.Locale;
  * v2 CLI with legacy parity + Stage 5c polish: - Player chooses how many cases to open each round
  * (no hard-coded schedule). - Immediate reveal after each open; board reprinted after each open. -
  * Banker offer after the chosen opens; EV/advisor line can be hidden with --show-ev=false. -
- * Optional transcript export via --transcript=out.json | out.csv. - New: --cases=custom prompts for
- * any integer >= 4 before starting.
+ * Optional transcript export via --transcript=out.json | out.csv. - --cases=custom prompts for any
+ * integer in 2..25 before starting.
  */
 public final class Main {
 
@@ -49,7 +49,7 @@ public final class Main {
         int caseCount = opt.caseCount;
         BufferedReader in = new BufferedReader(new InputStreamReader(System.in));
         if (caseCount < 0) {
-            caseCount = askIntMin(in, "Enter total number of cases (>= 4): ", 4);
+            caseCount = askIntMin(in, "Enter total number of cases (2..25): ", 2);
             if (caseCount <= 0) exitNoInput(); // defensive
         }
 
