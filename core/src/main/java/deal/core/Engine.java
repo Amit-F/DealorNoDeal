@@ -1,11 +1,16 @@
 package deal.core;
 
+import deal.core.offer.LegacyOfferPolicy;
+import deal.core.offer.OfferPolicy;
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Random;
 
+/** Core game engine: state transitions + banker offer via pluggable policy. */
 public final class Engine {
     private final GameConfig cfg;
     private final Random rng;
@@ -15,38 +20,62 @@ public final class Engine {
         this.rng = new Random(seed);
     }
 
+    /** Start a new game: shuffle amounts, build cases, enter PICK_CASE phase. */
     public GameState start() {
-        List<Integer> shuffled = new ArrayList<>(cfg.amountsDollars());
+        // Resolve the ladder provider from GameConfig (support multiple APIs + reflection).
+        PrizeLadderProvider provider = resolveLadderProvider(cfg);
+        List<Integer> ladder = provider.amountsFor(cfg.caseCount());
+        List<Integer> shuffled = new ArrayList<>(ladder);
         Collections.shuffle(shuffled, rng);
+
         List<Briefcase> cases = new ArrayList<>(shuffled.size());
         for (int i = 0; i < shuffled.size(); i++) {
+            // Briefcase record signature: (id, amountDollars, opened)
             cases.add(new Briefcase(i + 1, shuffled.get(i), false));
         }
-        return GameState.initial(cases);
+
+        return new GameState(
+                Phase.PICK_CASE,
+                1,
+                cases,
+                null, // playerCaseId
+                new ArrayList<>(), // openedCaseIds
+                null, // currentOfferDollars
+                null, // counterOfferDollars
+                null, // resultDollars
+                0 // toOpenInThisRound
+                );
     }
 
+    /** Player picks their personal case during PICK_CASE. */
     public GameState pickPlayerCase(GameState s, int caseId) {
         requirePhase(s, Phase.PICK_CASE);
         requireValidCaseId(s, caseId);
         return s.withPlayerCase(caseId);
     }
 
-    /** Choose K to open in this round (validated by RoundPolicy). */
+    /**
+     * Player chooses how many cases to open this round. Validates K against remaining unopened
+     * **excluding** the player's case. Transitions to ROUND (stores K countdown).
+     */
     public GameState chooseToOpen(GameState s, int k) {
-        requirePhase(s, Phase.ROUND);
-        int unopened = countUnopenedNonPlayer(s);
-        if (!cfg.roundPolicy().isAllowed(unopened, k)) {
-            throw new IllegalArgumentException(
-                    "K not allowed for this round: " + k + " (unopened=" + unopened + ")");
+        if (s.phase() != Phase.ROUND && s.phase() != Phase.PICK_CASE) {
+            throw new IllegalStateException("chooseToOpen only allowed at round start");
+        }
+        int available = countUnopenedNonPlayer(s);
+        if (k <= 0 || k > Math.max(1, available - 1)) {
+            throw new IllegalArgumentException("Invalid K for this round: " + k);
+        }
+        if (s.phase() == Phase.PICK_CASE) {
+            if (s.playerCaseId() == null) throw new IllegalStateException("Pick your case first");
+            return s.withRoundK(k);
         }
         return s.withRoundK(k);
     }
 
-    /** Open a non-player unopened case; decreases remaining K. */
+    /** Open a specific unopened case (not the player's); decrements K. */
     public GameState openCase(GameState s, int caseId) {
         requirePhase(s, Phase.ROUND);
-        if (s.toOpenInThisRound() <= 0)
-            throw new IllegalStateException("Nothing left to open this round");
         requireValidCaseId(s, caseId);
         if (s.playerCaseId() != null && caseId == s.playerCaseId()) {
             throw new IllegalArgumentException("Cannot open the player's own case");
@@ -67,17 +96,27 @@ public final class Engine {
                 s1.toOpenInThisRound() - 1);
     }
 
-    /** Compute banker offer based on remaining EV and a simple risk factor (deterministic). */
+    /** Compute banker offer using the pluggable OfferPolicy (legacy-flavored curve). */
     public GameState computeOffer(GameState s) {
         if (s.toOpenInThisRound() > 0) {
             throw new IllegalStateException(
                     "Still need to open " + s.toOpenInThisRound() + " case(s)");
         }
         var remaining = remainingAmounts(s);
-        double ev = remaining.stream().mapToDouble(a -> a).average().orElse(0.0);
-        double riskFactor = Math.max(0.5, 0.75 + 0.05 * s.roundIndex());
-        int offer = (int) Math.round(ev * riskFactor);
+        OfferPolicy.Context ctx =
+                new OfferPolicy.Context(
+                        s.cases().size(), // initial case count
+                        remaining, // unopened amounts
+                        s.openedCaseIds().size(), // opened so far
+                        s.currentOfferDollars() // last offer (may be null)
+                        );
+        int offer = LegacyOfferPolicy.DEFAULT.offer(ctx);
         return s.withOffer(offer);
+    }
+
+    /** Convenience: entering OFFER just delegates to computeOffer(). */
+    public GameState toOffer(GameState s) {
+        return computeOffer(s);
     }
 
     /** Player accepts banker offer. */
@@ -86,7 +125,7 @@ public final class Engine {
         return s.withResult(nonNull(s.currentOfferDollars(), "offer not set"));
     }
 
-    /** Player declines banker offer; go to next round or final reveal if two cases remain. */
+    /** Player declines banker offer; next round or final reveal if two cases remain. */
     public GameState declineDeal(GameState s) {
         requirePhase(s, Phase.OFFER);
         int remaining = s.cases().size() - s.openedCaseIds().size();
@@ -94,28 +133,45 @@ public final class Engine {
         return s.nextRound();
     }
 
-    /** Player proposes a counteroffer during OFFER; enters COUNTEROFFER phase. */
+    /**
+     * Player proposes a counteroffer during OFFER. Legacy parity: allow any positive number
+     * (feasibility/acceptance checked in resolveCounter()).
+     */
     public GameState proposeCounter(GameState s, int playerCounterDollars) {
         requirePhase(s, Phase.OFFER);
-        if (playerCounterDollars <= 0)
+        if (playerCounterDollars <= 0) {
             throw new IllegalArgumentException("Counter must be positive");
-        int maxRemaining = remainingAmounts(s).stream().mapToInt(x -> x).max().orElse(0);
-        if (playerCounterDollars > maxRemaining) {
-            throw new IllegalArgumentException("Counter exceeds maximum possible prize");
         }
         return s.withCounterOffer(playerCounterDollars);
     }
 
     /**
-     * Banker decides whether to accept the counter. Deterministic rule: accept if counter <= EV *
-     * acceptanceFactor, where acceptanceFactor = min(1.10, 0.95 + 0.03 * roundIndex).
+     * Banker decision (legacy rule + pragmatic "same-or-less than offer" acceptance): Accept if
+     * EITHER: (A) counter ≤ current offer (effectively a DEAL), OR (B) counter ≤ maxRemaining AND
+     * counter ≤ ceil(EV * acceptanceFactor), where acceptanceFactor = min(1.10, 0.95 + 0.03 *
+     * roundIndex).
      */
     public GameState resolveCounter(GameState s) {
         requirePhase(s, Phase.COUNTEROFFER);
         int counter = nonNull(s.counterOfferDollars(), "counter not set");
-        double ev = remainingAmounts(s).stream().mapToDouble(a -> a).average().orElse(0.0);
+
+        // If player counters at/below the current offer, accept immediately.
+        Integer curOffer = s.currentOfferDollars();
+        if (curOffer != null && counter <= curOffer) {
+            return s.withResult(counter);
+        }
+
+        // Legacy feasibility + EV threshold rule.
+        List<Integer> rem = remainingAmounts(s);
+        int maxRemaining = rem.stream().mapToInt(x -> x).max().orElse(0);
+        double ev = rem.stream().mapToDouble(a -> a).average().orElse(0.0);
         double acceptanceFactor = Math.min(1.10, 0.95 + 0.03 * s.roundIndex());
-        boolean accepted = counter <= ev * acceptanceFactor;
+        int threshold = (int) Math.ceil(ev * acceptanceFactor);
+
+        boolean feasible = counter <= maxRemaining;
+        boolean reasonable = counter <= threshold;
+        boolean accepted = feasible && reasonable;
+
         if (accepted) {
             return s.withResult(counter);
         } else {
@@ -125,17 +181,25 @@ public final class Engine {
         }
     }
 
-    /** Final reveal: if two cases remain, keep or swap; reveal winnings and end. */
+    /**
+     * Final reveal: exactly two unopened cases total (player + one other). Optional swap switches
+     * to the other case; result is the chosen case's amount.
+     */
     public GameState revealFinal(GameState s, boolean swap) {
         requirePhase(s, Phase.FINAL_REVEAL);
-        int playerId = nonNull(s.playerCaseId(), "playerCase not chosen");
-        var remainingIds = s.remainingUnopenedIds();
-        if (!remainingIds.contains(playerId))
-            throw new IllegalStateException("Player case was opened");
-        if (remainingIds.size() != 2)
-            throw new IllegalStateException("Final reveal requires exactly 2 unopened cases");
+        int playerId = nonNull(s.playerCaseId(), "player case not set");
 
-        int otherId = remainingIds.get(0) == playerId ? remainingIds.get(1) : remainingIds.get(0);
+        // Collect all unopened case ids (includes player's case).
+        List<Integer> unopened = new ArrayList<>();
+        for (var c : s.cases()) {
+            if (!s.isOpened(c.id())) unopened.add(c.id());
+        }
+        if (unopened.size() != 2) {
+            throw new IllegalStateException("Final reveal requires exactly 2 unopened cases");
+        }
+
+        // Identify the non-player case id.
+        int otherId = (unopened.get(0) == playerId) ? unopened.get(1) : unopened.get(0);
         int chosenId = swap ? otherId : playerId;
         int win = amountOf(s, chosenId);
         return s.withResult(win);
@@ -144,13 +208,15 @@ public final class Engine {
     // ---- helpers ----
 
     private static void requirePhase(GameState s, Phase expected) {
-        if (s.phase() != expected)
+        if (s.phase() != expected) {
             throw new IllegalStateException("Expected phase " + expected + " but was " + s.phase());
+        }
     }
 
     private static void requireValidCaseId(GameState s, int caseId) {
-        if (caseId < 1 || caseId > s.cases().size())
+        if (caseId < 1 || caseId > s.cases().size()) {
             throw new IllegalArgumentException("Invalid case id: " + caseId);
+        }
     }
 
     private static int countUnopenedNonPlayer(GameState s) {
@@ -177,5 +243,48 @@ public final class Engine {
     private static <T> T nonNull(T v, String msg) {
         if (v == null) throw new IllegalStateException(msg);
         return v;
+    }
+
+    /** Resolve a PrizeLadderProvider from GameConfig without assuming field/method names. */
+    private static PrizeLadderProvider resolveLadderProvider(GameConfig cfg) {
+        // 1) Try common explicit accessor names.
+        for (String name :
+                new String[] {
+                    "ladder", "prizeLadderProvider", "prizeLadder",
+                    "getLadder", "getPrizeLadderProvider", "getPrizeLadder"
+                }) {
+            try {
+                Method m = cfg.getClass().getMethod(name);
+                if (PrizeLadderProvider.class.isAssignableFrom(m.getReturnType())) {
+                    Object v = m.invoke(cfg);
+                    if (v instanceof PrizeLadderProvider p) return p;
+                }
+            } catch (ReflectiveOperationException ignored) {
+            }
+        }
+        // 2) Try any zero-arg method that returns PrizeLadderProvider.
+        for (Method m : cfg.getClass().getMethods()) {
+            try {
+                if (m.getParameterCount() == 0
+                        && PrizeLadderProvider.class.isAssignableFrom(m.getReturnType())) {
+                    Object v = m.invoke(cfg);
+                    if (v instanceof PrizeLadderProvider p) return p;
+                }
+            } catch (ReflectiveOperationException ignored) {
+            }
+        }
+        // 3) Try fields.
+        for (Field f : cfg.getClass().getDeclaredFields()) {
+            try {
+                if (PrizeLadderProvider.class.isAssignableFrom(f.getType())) {
+                    f.setAccessible(true);
+                    Object v = f.get(cfg);
+                    if (v instanceof PrizeLadderProvider p) return p;
+                }
+            } catch (ReflectiveOperationException ignored) {
+            }
+        }
+        // 4) Fallback.
+        return new DefaultPrizeLadder();
     }
 }
